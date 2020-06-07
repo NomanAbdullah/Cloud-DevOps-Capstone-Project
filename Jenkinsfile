@@ -12,7 +12,7 @@ pipeline {
 			steps {
 				withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'dockerhub', usernameVariable: 'DKR_USERNAME', passwordVariable: 'DKR_PASSWORD']]){
 					sh '''
-						docker build -t nomanpc/capsoneproject .
+						docker build -t nomanpc/capstoneproject .
 					'''
 				}
 			}
