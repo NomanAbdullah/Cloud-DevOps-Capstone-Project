@@ -2,35 +2,84 @@ pipeline {
 	agent any
 	stages {
 
-		stage('Stage 1 - Creating Kubernetes Cluster') {
+		stage('Stage 1 - Linting the HTML file') {
 			steps {
-				withAWS(region:'us-east-1', credentials:'eks_cred') {
+				sh 'tidy -q -e *.html'
+			}
+		}
+		
+		stage('Stage 2 - Building a Docker Image') {
+			steps {
+				withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'dockerhub', usernameVariable: 'DKR_USERNAME', passwordVariable: 'DKR_PASSWORD']]){
 					sh '''
-						eksctl create cluster \
-						--name capstone-cluster \
-						--version 1.16 \
-						--nodegroup-name standard-workers \
-						--node-type t2.small \
-						--nodes 2 \
-						--nodes-min 1 \
-						--nodes-max 3 \
-						--node-ami auto \
-						--region us-east-1 \
-						--zones us-east-1a \
-						--zones us-east-1b \
-						--zones us-east-1c \
+						docker build -t nomanpc/capsoneproject .
 					'''
 				}
 			}
 		}
 
-		
+		stage('Stage 3 - Pushing the Image To DockerHub') {
+			steps {
+				withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'dockerhub', usernameVariable: 'DKR_USERNAME', passwordVariable: 'DKR_PASSWORD']]){
+					sh '''
+						docker login -u $DKR_USERNAME -p $DKR_PASSWORD
+						docker push nomanpc/capstoneproject
+					'''
+				}
+			}
+		}
 
-		stage('Stage 2 - Creating a Conf file Cluster') {
+		stage('Stage 4 - Setting the Current kubectl Context') {
 			steps {
 				withAWS(region:'us-east-1', credentials:'eks_cred') {
 					sh '''
-						aws eks --region us-east-1 update-kubeconfig --name capstone-cluster
+						kubectl config use-context arn:aws:eks:us-east-1:529022208791:cluster/capstone-cluster
+					'''
+				}
+			}
+		}
+
+		stage('Stage 5 - Deploying a Blue Container') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'eks_cred') {
+					sh '''
+						kubectl apply -f ./blue-controller.json
+					'''
+				}
+			}
+		}
+
+		stage('Stage 6 - Deploying a Green Container') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'eks_cred') {
+					sh '''
+						kubectl apply -f ./green-controller.json
+					'''
+				}
+			}
+		}
+
+		stage('Stage 7 - Creating a Service in the Cluster-Blue') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'eks_cred') {
+					sh '''
+						kubectl apply -f ./blue-service.json
+					'''
+				}
+			}
+		}
+
+		stage('Stage 8 - Waiting for User Interaction') {
+            steps {
+                input "Would you like to redirect the traffic to Green?"
+            }
+        }
+
+		stage('Stage 9 - Creating a Service in the Cluster-Green') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'eks_cred') {
+					sh '''
+						kubectl apply -f ./green-service.json
 					'''
 				}
 			}
